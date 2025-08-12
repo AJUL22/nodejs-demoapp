@@ -12,21 +12,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Debug - Show system info
+        run: |
+          uname -a
+          lsb_release -a
+          df -h
+
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: 'npm'
 
       - name: Install dependencies
         working-directory: src
-        run: npm install
+        run: npm ci --prefer-offline
 
       - name: Run tests
         working-directory: src
-        run: npm test  # Fail pipeline if tests fail
+        run: npm test
+
+      - name: Debug - Verify Docker access
+        run: |
+          docker info
+          docker ps -a
+          ls -la /var/run/docker.sock || true
 
       - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:latest ./src
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:${{ github.sha }} ./src
+          docker tag ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:${{ github.sha }} ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:latest
 
       - name: Log in to DockerHub
         uses: docker/login-action@v2
@@ -35,22 +50,49 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:latest
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:${{ github.sha }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:latest
 
-      - name: Stop old container (if running)
+      - name: Cleanup old containers
         run: |
           docker stop nodejs-demoapp || true
           docker rm nodejs-demoapp || true
+          docker network prune -f || true
 
       - name: Run container
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
-        run: docker run -d --name nodejs-demoapp -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp
-        
+        run: |
+          docker run -d \
+            --name nodejs-demoapp \
+            --restart unless-stopped \
+            -p 3000:3000 \
+            -v /tmp:/tmp \
+            ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:${{ github.sha }}
+
+      - name: Debug - Show running containers
+        run: |
+          docker ps -a
+          docker inspect nodejs-demoapp
+
       - name: Verify deployment
+        timeout-minutes: 5
         run: |
           echo "Waiting for app to start..."
-          until curl -f http://localhost:3000/health; do
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3000/health >/dev/null; then
+              echo "App is healthy!"
+              curl -v http://localhost:3000/health
+              exit 0
+            fi
             sleep 2
           done
-          echo "App is running!"
+          echo "Health check failed after 1 minute"
+          docker logs nodejs-demoapp
+          exit 1
+
+      - name: Final status check
+        run: |
+          docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"
+          netstat -tuln
