@@ -46,3 +46,12 @@ jobs:
         run: |
           docker pull ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp
           docker run -d --name nodejs-demoapp -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp
+
+      - name: Wait for container startup
+        run: sleep 5
+
+      - name: Show running containers
+        run: docker ps
+
+      - name: Show container logs
+        run: docker logs nodejs-demoapp
