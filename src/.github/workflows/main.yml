@@ -37,11 +37,12 @@ jobs:
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp
 
-      # 🔹 Deployment inside WSL
-      - name: Deploy container in WSL
+      - name: Stop old container (if running)
         run: |
-          docker rm -f nodejs-demoapp || true
+          docker stop nodejs-demoapp || true
+          docker rm nodejs-demoapp || true
+
+      - name: Run container from latest image
+        run: |
           docker pull ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp
           docker run -d --name nodejs-demoapp -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp
-          docker ps
-
