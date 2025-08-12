@@ -42,10 +42,11 @@ jobs:
           docker stop nodejs-demoapp || true
           docker rm nodejs-demoapp || true
 
-      - name: Run new container
-        run: |
-          docker run -d --name nodejs-demoapp -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp:latest
-
+      - name: Run container
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+        run: docker run -d --name nodejs-demoapp -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/nodejs-demoapp
+        
       - name: Verify deployment
         run: |
           echo "Waiting for app to start..."
